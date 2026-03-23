@@ -12,21 +12,19 @@ from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi.middleware.cors import CORSMiddleware
 
-# This helps debug in Vercel Logs
-print("System: VibeAI Engine starting up...")
+app = FastAPI(title="VibeAI Engine", redirect_slashes=False)
 
-app = FastAPI(title="VibeAI Engine")
-
+# 1. Standard CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Configuration for Hugging Face Inference API
-# We use os.getenv without a default to check if it's explicitly set
 HF_TOKEN = os.getenv("HF_TOKEN")
 SENTIMENT_URL = "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english"
 CLASSIFIER_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
