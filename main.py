@@ -1,4 +1,6 @@
 import os
+from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse
 import httpx
 import asyncio
 import numpy as np
@@ -18,7 +20,8 @@ app = FastAPI(title="VibeAI Engine")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -27,6 +30,12 @@ app.add_middleware(
 HF_TOKEN = os.getenv("HF_TOKEN")
 SENTIMENT_URL = "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english"
 CLASSIFIER_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
+
+# Explicit Preflight Handler
+# Some proxies/browsers prefer an explicit handler for OPTIONS
+@app.options("/{rest_of_path:path}")
+async def preflight_handler():
+    return JSONResponse(content="OK", status_code=200)
 
 # Warn immediately if the token is missing during cold start
 if not HF_TOKEN:
