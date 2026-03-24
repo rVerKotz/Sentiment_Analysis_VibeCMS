@@ -22,37 +22,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def add_cors_header(request: Request, call_next):
-    origin = request.headers.get("Origin", "*")
-    
-    if request.method == "OPTIONS":
-        response = Response()
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-        
-    try:
-        response = await call_next(request)
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "detail": "Internal Server Error", 
-                "message": str(e),
-                "type": type(e).__name__
-            },
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Credentials": "true"
-            }
-        )
-
 # Configuration for Hugging Face Inference API
 HF_TOKEN = os.getenv("HF_TOKEN")
 SENTIMENT_URL = "https://router.huggingface.co/hf-inference/models/distilbert-base-uncased-finetuned-sst-2-english"
@@ -78,6 +47,7 @@ class Comment(BaseModel):
 class Article(BaseModel):
     id: str
     title: str
+    content: Optional[str] = ""
     views: int = 0
     likes: int = 0
     updated_at: str
@@ -104,6 +74,11 @@ async def query_hf_api(client, url, payload):
             if response.status_code == 401:
                 print("Error: Unauthorized. Check your HF_TOKEN.")
                 return None
+            
+            if not response.text:
+                print(f"Empty response from HF API (Attempt {i+1})")
+                await asyncio.sleep(1)
+                continue
                 
             result = response.json()
             
@@ -129,7 +104,12 @@ async def extract_dynamic_labels(client, articles: List[Article]):
         return ["Technology", "General", "Personal", "Insight"]
 
     # Increased snippet length to 300 to provide better context for the label generator
-    sample_text = " ".join([f"{a.title}: {a.content[:300]}" for a in articles[:3]])
+    text_samples = []
+    for a in articles[:3]:
+        content_val = getattr(a, 'content', '') or ''
+        text_samples.append(f"{a.title}: {content_val[:300]}")
+        
+    sample_text = " ".join(text_samples)
     
     payload = {
         "inputs": f"Summarize the main topics of these articles into 5 distinct categories: {sample_text}",
@@ -157,7 +137,6 @@ async def health():
 @app.post("/analyze")
 async def analyze_vibe(request: AnalysisRequest):
     print(f"Received request with {len(request.articles)} articles")
-    
     if not HF_TOKEN:
         raise HTTPException(status_code=500, detail="HF_TOKEN not configured on server")
     
@@ -168,6 +147,7 @@ async def analyze_vibe(request: AnalysisRequest):
 
     async with httpx.AsyncClient() as client:
         dynamic_labels = await extract_dynamic_labels(client, request.articles)
+        print(dynamic_labels)
         for comment in request.comments:
             sentiment_res = await query_hf_api(client, SENTIMENT_URL, {"inputs": comment.content})
             
