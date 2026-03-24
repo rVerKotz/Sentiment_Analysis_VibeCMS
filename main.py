@@ -24,7 +24,7 @@ app.add_middleware(
 
 # Configuration for Hugging Face Inference API
 HF_TOKEN = os.getenv("HF_TOKEN")
-SENTIMENT_URL = "https://router.huggingface.co/hf-inference/models/distilbert-base-uncased-finetuned-sst-2-english"
+SENTIMENT_URL = "https://router.huggingface.co/hf-inference/models/distilbert/distilbert-base-uncased-finetuned-sst-2-english"
 CLASSIFIER_URL = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli"
 KEYWORDS_URL = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-cnn"
 
