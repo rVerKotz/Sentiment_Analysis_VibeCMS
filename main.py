@@ -1,15 +1,14 @@
 import os
-from fastapi.responses import JSONResponse
-from fastapi.responses import JSONResponse
 import httpx
 import asyncio
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from collections import Counter
 from typing import List, Optional
 from datetime import datetime, timezone
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="VibeAI Engine", redirect_slashes=False)
@@ -26,8 +25,9 @@ app.add_middleware(
 
 # Configuration for Hugging Face Inference API
 HF_TOKEN = os.getenv("HF_TOKEN")
-SENTIMENT_URL = "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english"
-CLASSIFIER_URL = "https://api-inference.huggingface.co/models/facebook/bart-large-mnli"
+SENTIMENT_URL = "https://router.huggingface.co/hf-inference/models/distilbert-base-uncased-finetuned-sst-2-english"
+CLASSIFIER_URL = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-mnli"
+KEYWORDS_URL = "https://router.huggingface.co/hf-inference/models/facebook/bart-large-cnn"
 
 # Explicit Preflight Handler
 # Some proxies/browsers prefer an explicit handler for OPTIONS
@@ -90,6 +90,32 @@ async def query_hf_api(client, url, payload):
             await asyncio.sleep(1)
     return None
 
+async def extract_dynamic_labels(client, articles: List[Article]):
+    """
+    Dynamically generates categories based on current articles with huggingface.
+    This replaces Internal NLP for better topical relevance and current production environment.
+    """
+    if not articles:
+        return ["Technology", "General", "Personal", "Insight"]
+
+    # Increased snippet length to 300 to provide better context for the label generator
+    sample_text = " ".join([f"{a.title}: {a.content[:300]}" for a in articles[:3]])
+    
+    payload = {
+        "inputs": f"Summarize the main topics of these articles into 5 distinct categories: {sample_text}",
+        "parameters": {"max_length": 40}
+    }
+    
+    res = await query_hf_api(client, KEYWORDS_URL, payload)
+    
+    if res and isinstance(res, list) and len(res) > 0:
+        summary = res[0].get('summary_text', "")
+        # Clean and split the summary into individual labels
+        labels = [l.strip().title() for l in summary.replace(".", "").replace("and", "").split(",") if len(l.strip()) > 2]
+        if len(labels) >= 2: return labels[:5]
+    
+    return ["Performance", "Design", "Technical", "Usability", "Security"]
+
 @app.get("/")
 async def health():
     return {
@@ -111,6 +137,7 @@ async def analyze_vibe(request: AnalysisRequest):
     struggle_topics = []
 
     async with httpx.AsyncClient() as client:
+        dynamic_labels = await extract_dynamic_labels(client, request.articles)
         for comment in request.comments:
             sentiment_res = await query_hf_api(client, SENTIMENT_URL, {"inputs": comment.content})
             
@@ -121,10 +148,9 @@ async def analyze_vibe(request: AnalysisRequest):
                     top_res = sentiment_res[0][0] if isinstance(sentiment_res[0], list) else sentiment_res[0]
                     
                     if top_res['label'] == 'NEGATIVE' or top_res['score'] < 0.6:
-                        candidate_labels = ["Technical Detail", "Deployment/AWS", "UI/UX Design", "Performance", "General Praise"]
                         class_res = await query_hf_api(client, CLASSIFIER_URL, {
                             "inputs": comment.content,
-                            "parameters": {"candidate_labels": candidate_labels}
+                            "parameters": {"candidate_labels": dynamic_labels}
                         })
                         if class_res and "labels" in class_res:
                             struggle_topics.append(class_res['labels'][0])
