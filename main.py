@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from collections import Counter
 from typing import List, Optional
 from datetime import datetime, timezone
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -21,6 +21,37 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_cors_header(request: Request, call_next):
+    origin = request.headers.get("Origin", "*")
+    
+    if request.method == "OPTIONS":
+        response = Response()
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+        
+    try:
+        response = await call_next(request)
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal Server Error", 
+                "message": str(e),
+                "type": type(e).__name__
+            },
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true"
+            }
+        )
 
 # Configuration for Hugging Face Inference API
 HF_TOKEN = os.getenv("HF_TOKEN")
